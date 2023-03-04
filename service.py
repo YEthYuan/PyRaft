@@ -55,7 +55,7 @@ class Service:
             time.sleep(sleep_time)
         elif self.sleep:
             time.sleep(self.sleep)
-    
+
     def start(self):
         self.election_timeout = threading.Timer(self.random_timeout(), self.start_election)
         self.election_timeout.start()
@@ -122,6 +122,46 @@ class Service:
 
 
     ##############  Network Services  ################################
+    def generate_packet_to_send(self, msg_item: str, msg_type: str) -> dict:
+        """
+        Packet definition:
+        packet = {
+            'type': [],
+            'item': str (can be a dumped json string)
+        }
+        :param msg_item:
+        :param msg_type:
+        :return:
+        """
+        packet = {
+            'type': msg_type,
+            'item': msg_item,
+            'from': self.node_id
+        }
+        return packet
+
+    def send_udp_packet(self, data: str, addr: tuple):
+        """
+        Sends a UDP packet to a specified host and port
+
+        Args:
+        data: str: the message you want to send
+        host: str: the destination IP address
+        port: int: the destination port
+
+        Returns:
+        None
+
+        """
+        # Create a socket object
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            # Send the packet
+            sock.sendto(data.encode(), addr)
+        finally:
+            # Close the socket
+            sock.close()
+
     def init_udp_recv_settings(self):
         self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.udp_sock.bind(self.my_addr)
