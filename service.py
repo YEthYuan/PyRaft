@@ -1,21 +1,61 @@
+import os
+import json
+import random
+import time
+
+import yaml
+import socket
 import threading
 
-class RaftNode:
-    def __init__(self, node_id, peers):
-        self.node_id = node_id
-        self.peers = peers
-        self.current_term = 0
+class Service:
+    def __init__(self, id: int, config_path: str, sleep=0):
+        self.node_id = id
+        self.udp_thread = None
+        self.udp_sock = None
+        self.sleep = sleep
+
+        self.term = 0
         self.voted_for = None
         self.log = []
-        self.commit_index = 0
-        self.last_applied = 0
+        self.dict = {}
+        self.commit_idx = 0
+        self.last_applied_idx = 0
+        self.routes = {}
+        self.my_addr = None
         self.state = 'follower'
         self.election_timeout = None
         self.vote_count = 0
         self.leader_id = None
-        self.next_index = {}
-        self.match_index = {}
+        self.next_idx = {}
+        self.match_idx = {}
 
+        self.config_internet(config_path)
+
+        self.init_udp_recv_settings()
+        self.start_listening()
+
+
+    def config_internet(self, path: str):
+        with open(path, 'r') as file:
+            config = yaml.load(file, Loader=yaml.FullLoader)
+        print(f"==>Config file loaded from {path}")
+
+        for client in config['clients']:
+            if self.node_id == client['nodeId']:
+                self.my_addr = (client['ip'], client['port'])
+
+            self.routes[client['nodeId']] = {
+                'addr': (client['ip'], client['port']),
+                'enable': True
+            }
+
+    def message_delay(self):
+        if self.sleep == -1:
+            sleep_time = random.uniform(0, 3)
+            time.sleep(sleep_time)
+        elif self.sleep:
+            time.sleep(self.sleep)
+    
     def start(self):
         self.election_timeout = threading.Timer(self.random_timeout(), self.start_election)
         self.election_timeout.start()
@@ -29,7 +69,7 @@ class RaftNode:
 
     def start_election(self):
         self.state = 'candidate'
-        self.current_term += 1
+        self.term += 1
         self.voted_for = self.node_id
         self.vote_count = 1
         self.election_timeout.cancel()
@@ -41,7 +81,7 @@ class RaftNode:
         self.election_timeout.start()
 
     def on_request_vote(self, candidate_id, term, last_log_index, last_log_term):
-        if term < self.current_term:
+        if term < self.term:
             return False
 
         if self.voted_for is None or self.voted_for == candidate_id:
@@ -52,12 +92,12 @@ class RaftNode:
         return False
 
     def on_append_entries(self, leader_id, term, prev_log_index, prev_log_term, entries, leader_commit):
-        if term < self.current_term:
+        if term < self.term:
             return False
 
         self.election_timeout.cancel()
         self.state = 'follower'
-        self.current_term = term
+        self.term = term
         self.leader_id = leader_id
 
         if prev_log_index >= len(self.log) or self.log[prev_log_index].term != prev_log_term:
@@ -69,8 +109,8 @@ class RaftNode:
                 self.log.extend(entries[i:])
                 break
 
-        if leader_commit > self.commit_index:
-            self.commit_index = min(leader_commit, len(self.log) - 1)
+        if leader_commit > self.commit_idx:
+            self.commit_idx = min(leader_commit, len(self.log) - 1)
 
         return True
 
@@ -79,3 +119,49 @@ class RaftNode:
 
     def send_request_vote(self, peer):
         # TODO: Implement send_request_vote RPC to peer
+
+
+    ##############  Network Services  ################################
+    def init_udp_recv_settings(self):
+        self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udp_sock.bind(self.my_addr)
+
+    def start_listening(self):
+        # Start the thread to listen for UDP packets
+        self.udp_thread = threading.Thread(target=self.listen_for_udp)
+        self.udp_thread.start()
+
+    def listen_for_udp(self):
+        while not self.stop_udp_thread:
+            data, addr = self.udp_sock.recvfrom(1024)
+            # print("Received data:", data)
+            # print("From address:", addr)
+            self.process_recv_data(data)
+
+    def stop_udp(self):
+        self.stop_udp_thread = True
+        self.udp_thread.join()
+
+    def process_recv_data(self, data):
+        data = json.loads(data)
+        if data['type'] == 'XXX':
+            if self.state != "":
+                return
+            print(f"==>Received XXX from another client {data['from']}.")
+            payload = data['item']
+            payload = json.loads(payload)
+            self.process_XXX(payload, sender=data['from'])
+        elif data['type'] == 'YYY':
+            if self.state != "":
+                return
+            print(f"")
+            payload = data['item']
+            payload = json.loads(payload)
+            self.processYYY(payload)
+        elif data['type'] == 'client-release':
+            if self.state != "":
+                return
+            print(f"==>Client {data['from']} sent you a release.")
+            payload = data['item']
+            payload = json.loads(payload)
+            self.process_ZZZ(payload)
