@@ -7,6 +7,8 @@ import yaml
 import socket
 import threading
 
+from log import Log
+
 class Service:
     def __init__(self, id: int, config_path: str, sleep=0):
         self.node_id = id
@@ -16,7 +18,8 @@ class Service:
 
         self.current_term = 0
         self.voted_for = None
-        self.log = []
+        self.filename = str(self.node_id)+"_log.json"
+        self.log = Log(self.filename)
         self.dict = {}
         self.commit_idx = 0
         self.last_applied_idx = 0
