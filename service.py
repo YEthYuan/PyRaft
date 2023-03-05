@@ -14,7 +14,7 @@ class Service:
         self.udp_sock = None
         self.sleep = sleep
 
-        self.term = 0
+        self.current_term = 0
         self.voted_for = None
         self.log = []
         self.dict = {}
@@ -23,8 +23,7 @@ class Service:
         self.routes = {}
         self.my_addr = None
         self.state = 'follower'
-        self.election_timeout = None
-        self.vote_count = 0
+        self.votes = {}
         self.leader_id = None
         self.next_idx = {}
         self.match_idx = {}
@@ -32,7 +31,14 @@ class Service:
         self.config_internet(config_path)
 
         self.init_udp_recv_settings()
+        self.stop_udp_thread = False
         self.start_listening()
+
+        # time clock
+        self.T = (5,10)
+        self.election_timeout = time.time() + random.randint(*self.T)
+        self.heartbeat = 0
+
 
 
     def config_internet(self, path: str):
@@ -49,79 +55,6 @@ class Service:
                 'enable': True
             }
 
-    def message_delay(self):
-        if self.sleep == -1:
-            sleep_time = random.uniform(0, 3)
-            time.sleep(sleep_time)
-        elif self.sleep:
-            time.sleep(self.sleep)
-
-    def start(self):
-        self.election_timeout = threading.Timer(self.random_timeout(), self.start_election)
-        self.election_timeout.start()
-
-    def stop(self):
-        self.election_timeout.cancel()
-
-    def random_timeout(self):
-        # TODO: Implement randomized election timeout
-        pass
-
-    def start_election(self):
-        self.state = 'candidate'
-        self.term += 1
-        self.voted_for = self.node_id
-        self.vote_count = 1
-        self.election_timeout.cancel()
-
-        for peer in self.peers:
-            # TODO: Implement send_request_vote RPC to peers
-
-        self.election_timeout = threading.Timer(self.random_timeout(), self.start_election)
-        self.election_timeout.start()
-
-    def on_request_vote(self, candidate_id, term, last_log_index, last_log_term):
-        if term < self.term:
-            return False
-
-        if self.voted_for is None or self.voted_for == candidate_id:
-            if self.log[-1].term <= last_log_term and len(self.log) <= last_log_index:
-                self.voted_for = candidate_id
-                return True
-
-        return False
-
-    def on_append_entries(self, leader_id, term, prev_log_index, prev_log_term, entries, leader_commit):
-        if term < self.term:
-            return False
-
-        self.election_timeout.cancel()
-        self.state = 'follower'
-        self.term = term
-        self.leader_id = leader_id
-
-        if prev_log_index >= len(self.log) or self.log[prev_log_index].term != prev_log_term:
-            return False
-
-        for i in range(len(entries)):
-            if prev_log_index + 1 + i >= len(self.log) or self.log[prev_log_index + 1 + i].term != entries[i].term:
-                self.log = self.log[:prev_log_index + 1 + i]
-                self.log.extend(entries[i:])
-                break
-
-        if leader_commit > self.commit_idx:
-            self.commit_idx = min(leader_commit, len(self.log) - 1)
-
-        return True
-
-    def send_append_entries(self, peer):
-        # TODO: Implement send_append_entries RPC to peer
-
-    def send_request_vote(self, peer):
-        # TODO: Implement send_request_vote RPC to peer
-
-
-    ##############  Network Services  ################################
     def generate_packet_to_send(self, msg_item: str, msg_type: str) -> dict:
         """
         Packet definition:
@@ -157,10 +90,85 @@ class Service:
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             # Send the packet
+            self.message_delay()
             sock.sendto(data.encode(), addr)
         finally:
             # Close the socket
             sock.close()
+
+    def message_delay(self):
+        if self.sleep == -1:
+            sleep_time = random.uniform(0, 3)
+            time.sleep(sleep_time)
+        elif self.sleep:
+            time.sleep(self.sleep)
+
+    def send_append_entries(self, peer):
+        # TODO: Implement send_append_entries RPC to peer
+
+    def request_vote(self):
+        for dst in self.routes:
+            if not self.votes[dst]:
+                request = {
+                    'type': 'request_vote',
+                    'src': self.node_id,
+                    'dst': dst,
+                    'term': self.current_term,
+                    'candidate_id': self.node_id,
+                    'last_log_index': self.log.last_log_index,
+                    'last_log_term': self.log.last_log_term
+                }
+                request = json.dumps(request)
+
+                if self.routes['dst']['enable']:
+                    self.send_udp_packet(request,self.routes['dst']['addr'])
+
+    def respond_vote(self,data):
+        response = {
+            'type': 'ResponseVote',
+            'src': self.node_id,
+            'dst': data['src'],
+            'term': self.current_term,
+            'grant': False
+        }
+        if data['term'] < self.current_term:
+            response['grant'] = False
+            response = json.dumps(response)
+
+            if self.routes[data['src']]['enable']:
+                self.send_udp_packet(response,self.routes[data['src']]['addr'])
+
+            return
+
+        candidate_id = data['candidate_id']
+        last_log_index = data['last_log_index']
+        last_log_term = data['last_log_term']
+
+        if not self.voted_for or self.voted_for == candidate_id:
+            if last_log_index >= self.log.last_log_index and last_log_term >= self.log.last_log_term:
+                self.voted_for = data['src']
+                response['grant'] = True
+                response = json.dumps(response)
+
+                if self.routes[data['src']]['enable']:
+                    self.send_udp_packet(response, self.routes[data['src']]['addr'])
+            else:
+                self.voted_for = None
+                response['grant'] = False
+                response = json.dumps(response)
+
+                if self.routes[data['src']]['enable']:
+                    self.send_udp_packet(response, self.routes[data['src']]['addr'])
+        else:
+            response['grant'] = False
+            response = json.dumps(response)
+
+            if self.routes[data['src']]['enable']:
+                self.send_udp_packet(response, self.routes[data['src']]['addr'])
+        return
+
+
+
 
     def init_udp_recv_settings(self):
         self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -171,37 +179,93 @@ class Service:
         self.udp_thread = threading.Thread(target=self.listen_for_udp)
         self.udp_thread.start()
 
+    def redirect(self,data,addr):
+        pass
+
+    def all_server_func(self,data):
+        if self.commit_idx > self.last_applied_idx:
+            self.last_applied_idx = self.commit_idx
+            ######## applied to local machine ############
+            pass
+
+        if data['term'] > self.current_term:
+            self.current_term = data['term']
+            self.state = 'follower'
+            self.voted_for = None
+
+    def follower_func(self,data):
+        t = time.time()
+        # func 1: respond to RPC
+        if data['type'] == 'AppendEntries':
+            ############################## need ###################
+            pass
+
+        elif data['type'] == 'RequestVote':
+            self.respond_vote(data)
+
+        # func 2: start election if timeout
+        if t > self.election_timeout:
+            self.election_timeout = t + random.randint(*self.T)
+            self.state = 'candidate'
+            self.current_term += 1
+            self.voted_for = self.node_id
+            self.votes = { voter: False for voter in self.routes }
+            self.votes[self.node_id] = True
+
+    def candidate_func(self,data):
+        t = time.time()
+
+        # start election
+        self.request_vote()
+
+        if data['term'] == self.current_term:
+            if data['type'] == 'ResponseVote':
+                self.votes[data['src']] = data['grant']
+                vote_count = sum(list(self.votes.values()))
+
+                if vote_count >= len(self.routes)//2:
+                    self.state = 'leader'
+                    self.voted_for = None
+                    self.heartbeat = 0
+                    self.next_idx = {_id: self.log.last_log_index + 1 for _id in self.routes}
+                    self.match_idx = {_id: 0 for _id in self.routes}
+                    return
+            elif data['type'] == 'AppendEntries':
+                self.election_timeout = t + random.randint(*self.T)
+                self.state = 'follower'
+                self.voted_for = None
+                return
+
+        if t > self.election_timeout:
+            self.election_timeout = t + random.randint(*self.T)
+            self.current_term += 1
+            self.voted_for = self.node_id
+            self.votes = {voter: False for voter in self.routes}
+            self.votes[self.node_id] = True
+
+
+    def leader_func(self,data):
+        pass
+
+
     def listen_for_udp(self):
         while not self.stop_udp_thread:
-            data, addr = self.udp_sock.recvfrom(1024)
-            # print("Received data:", data)
-            # print("From address:", addr)
-            self.process_recv_data(data)
+            data, addr = self.udp_sock.recvfrom(65535)
+
+            # data = self.redirect(data, addr)
+
+            self.all_server_func(data)
+
+            if self.state == 'follower':
+                self.follower_func(data)
+
+            if self.state == 'candidate':
+                self.candidate_func(data)
+
+            if self.state == 'leader':
+                self.leader_func(data)
 
     def stop_udp(self):
         self.stop_udp_thread = True
         self.udp_thread.join()
 
-    def process_recv_data(self, data):
-        data = json.loads(data)
-        if data['type'] == 'XXX':
-            if self.state != "":
-                return
-            print(f"==>Received XXX from another client {data['from']}.")
-            payload = data['item']
-            payload = json.loads(payload)
-            self.process_XXX(payload, sender=data['from'])
-        elif data['type'] == 'YYY':
-            if self.state != "":
-                return
-            print(f"")
-            payload = data['item']
-            payload = json.loads(payload)
-            self.processYYY(payload)
-        elif data['type'] == 'client-release':
-            if self.state != "":
-                return
-            print(f"==>Client {data['from']} sent you a release.")
-            payload = data['item']
-            payload = json.loads(payload)
-            self.process_ZZZ(payload)
