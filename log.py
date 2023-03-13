@@ -12,32 +12,32 @@ class Log:
         else:
             self.entries = []
 
+
     @property
     def last_log_index(self):
         return len(self.entries)-1
 
     @property
     def last_log_term(self):
-        return self.entries[self.last_log_index]['term']
+        return self.get_entry_term(self.last_log_index)
 
-    def log_append(self, info: dict, act: str, term: int):
+    def log_append(self, new_entries):
+        self.entries.extend(new_entries)
 
-        """
-        Add new entry to log
+    def log_delete(self, index):
+        if index < 0 or index >= len(self.entries):
+            return
+        self.entries = self.entries[: max(0, index)]
 
-        :param info: contain all the information
-        :param act: three types of entry(create,put,get), use to recover
-        :param term: current term
+    def get_entry_term(self, index):
 
-        :return: None
+        if index < 0 or index >= len(self.entries):
+            return -1
+        else:
+            return self.entries[index]['term']
 
-        """
-        entry = {
-            'term': term,
-            'info': info,
-            'act': act
-        }
-        self.entries.append(entry)
+    def get_entries(self, index):
+        return self.entries[max(0,index):]
 
     def print_log(self):
         for entry in self.entries:
@@ -51,20 +51,20 @@ def run():
     filename = str(1)+'_log.json'
     log = Log(filename)
 
-    info = {
+    print(log.get_entries(0))
+    info1 = {
         'dict_id':1,
         'client_ids':[1,2,3],
         'public key':11111
     }
-    log.log_append(info,'create',1)
 
-    info = {
+    info2 = {
         'dict_id':1,
         'client_id':1,
         'key': 'wxw',
         'value':10
     }
-    log.log_append(info,'put',2)
+    log.log_append([info1,info2])
 
     log.print_log()
     log.save()

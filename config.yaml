@@ -1,7 +1,4 @@
 clients:
-  - nodeId: 0
-    ip: 127.0.0.1
-    port: 8000
   - nodeId: 1
     ip: 127.0.0.1
     port: 8001
@@ -14,4 +11,7 @@ clients:
   - nodeId: 4
     ip: 127.0.0.1
     port: 8004
+  - nodeId: 5
+    ip: 127.0.0.1
+    port: 8005
 
