@@ -1,7 +1,10 @@
+import os
+import pickle
 import sys
 import json
 import random
 import time
+import rsa
 
 import yaml
 import socket
@@ -10,7 +13,7 @@ import threading
 from log import Log
 
 class Service:
-    def __init__(self, id: int, config_path: str, sleep=1):
+    def __init__(self, id: int, config_path: str, recovery=0, sleep=1):
         self.node_id = id
         self.udp_thread = None
         self.udp_sock = None
@@ -18,7 +21,7 @@ class Service:
 
         self.current_term = 0
         self.voted_for = None
-        self.filename = str(self.node_id)+"_log.json"
+        self.filename = "logs/" + str(self.node_id) + "_log.json"
         self.log = Log(self.filename)
         self.dict_id = (self.node_id,0)
         self.dict = {}
@@ -29,6 +32,11 @@ class Service:
         self.state = 'follower'
         self.votes = {}
         self.leader_id = None
+
+        # generate key pair
+        self.public_key = None
+        self.private_key = None
+        self.pubkey_list = None
 
         # volatile state on leaders
         self.next_idx = {_id: self.log.last_log_index+1 for _id in self.routes}
@@ -46,7 +54,11 @@ class Service:
         self.election_timeout = time.time() + (7 + self.node_id * 3)
         self.heartbeat = 0
 
+        if recovery:
+            self.load_ckpt()
+
     def config_internet(self, path: str):
+        self.pubkey_list = {}
         with open(path, 'r') as file:
             config = yaml.load(file, Loader=yaml.FullLoader)
         print(f"==>Config file loaded from {path}")
@@ -54,11 +66,44 @@ class Service:
         for client in config['clients']:
             if self.node_id == client['nodeId']:
                 self.my_addr = (client['ip'], client['port'])
+                public_path = "secrets/node_" + str(self.node_id) + "_public_key.pem"
+                private_path = "secrets/node_" + str(self.node_id) + "_private_key.pem"
+                with open(public_path, mode='rb') as file:
+                    public_key_data = file.read()
+                self.public_key = rsa.PublicKey.load_pkcs1(public_key_data)
+
+                with open(private_path, mode='rb') as file:
+                    private_key_data = file.read()
+                self.private_key = rsa.PrivateKey.load_pkcs1(private_key_data)
 
             self.routes[client['nodeId']] = {
                 'addr': (client['ip'], client['port']),
                 'enable': True
             }
+            public_path = "secrets/node_" + str(client['nodeId']) + "_public_key.pem"
+            with open(public_path, mode='rb') as file:
+                public_key_data = file.read()
+            self.pubkey_list[client['nodeId']] = rsa.PublicKey.load_pkcs1(public_key_data)
+
+    def gen_rsa_key_pair(self, length=512, path="secrets/"):
+        public_path = path + "node_" + str(self.node_id) + "_public_key.pem"
+        private_path = path + "node_" + str(self.node_id) + "_private_key.pem"
+        if os.path.exists(public_path) and os.path.exists(private_path):
+            with open(public_path, mode='rb') as file:
+                public_key_data = file.read()
+            self.public_key = rsa.PublicKey.load_pkcs1(public_key_data)
+
+            with open(private_path, mode='rb') as file:
+                private_key_data = file.read()
+            self.private_key = rsa.PrivateKey.load_pkcs1(private_key_data)
+
+        else:
+            (self.public_key, self.private_key) = rsa.newkeys(length)
+            with open(public_path, "wb") as public_file:
+                public_file.write(self.public_key.save_pkcs1())
+
+            with open(private_path, "wb") as private_file:
+                private_file.write(self.private_key.save_pkcs1())
 
     # def generate_packet_to_send(self, msg_item: str, msg_type: str) -> dict:
     #     """
@@ -77,7 +122,7 @@ class Service:
     #         'from': self.node_id
     #     }
     #     return packet
-    def send_udp_packet(self, data: str, addr: tuple):
+    def send_udp_packet(self, data: str, addr: tuple, dst):
         """
         Sends a UDP packet to a specified host and port
 
@@ -91,8 +136,28 @@ class Service:
 
         """
         # Create a socket object
+        data = data.encode("utf-8")
+        # data_enc = rsa.encrypt(data, self.pubkey_list[dst])
+
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(data.encode(), addr)
+        sock.sendto(data, addr)
+
+    def save_ckpt(self):
+        filename = "ckpts/node" + str(self.node_id) + "_ckpt.pkl"
+        with open(filename, 'wb') as file:
+            pickle.dump(self.__dict__, file)
+
+        print(f"==> Checkpoint save to {filename}")
+
+    def load_ckpt(self, filename=None):
+        if filename == None:
+            filename = "ckpts/node" + str(self.node_id) + "_ckpt.pkl"
+
+        with open(filename, 'rb') as file:
+            node_dict = pickle.load(file)
+
+        self.__dict__.update(node_dict)
+        print(f"==> Recovery from {filename}")
 
     def message_delay(self):
         if self.sleep == -1:
@@ -124,7 +189,7 @@ class Service:
 
                 if self.routes[dst]['enable']:
                     print(f"[Log]: leader {self.node_id} send append_entry to follower {dst}")
-                    self.send_udp_packet(append_request, self.routes[dst]['addr'])
+                    self.send_udp_packet(append_request, self.routes[dst]['addr'], dst)
 
     def respond_append(self, data):
         self.message_delay()
@@ -142,15 +207,15 @@ class Service:
             if self.routes[data['src']]['enable']:
                 response = json.dumps(response)
                 print(f"[Log]: follower {self.node_id} response to leader {data['src']}")
-                self.send_udp_packet(response, self.routes[data['src']]['addr'])
+                self.send_udp_packet(response, self.routes[data['src']]['addr'], data['src'])
 
             return False
 
         if data['entries']:
             print(f"prev_log_index:{data['prev_log_index']}")
             print(f"prev_log_term:{data['prev_log_term']}")
-            prev_log_index = data['prev_log_index']
-            prev_log_term = data['prev_log_term']
+            prev_log_index = data['prev_log_index']  # value from server
+            prev_log_term = data['prev_log_term']  # value from server
 
             if prev_log_term != self.log.get_entry_term(prev_log_index):
                 response['success'] = False
@@ -163,7 +228,7 @@ class Service:
             if self.routes[data['src']]['enable']:
                 response = json.dumps(response)
                 print(f"[Log]: follower {self.node_id} response to leader {data['src']}")
-                self.send_udp_packet(response, self.routes[data['src']]['addr'])
+                self.send_udp_packet(response, self.routes[data['src']]['addr'], data['src'])
 
         leader_commit = data['leader_commit']
         if leader_commit > self.commit_idx:
@@ -200,7 +265,7 @@ class Service:
 
                 if self.routes[dst]['enable']:
                     print(f"[Log]: candidate {self.node_id} request vote from {dst}")
-                    self.send_udp_packet(request, self.routes[dst]['addr'])
+                    self.send_udp_packet(request, self.routes[dst]['addr'], dst)
 
     def respond_vote(self, data):
         self.message_delay()
@@ -216,7 +281,7 @@ class Service:
             response = json.dumps(response)
 
             if self.routes[data['src']]['enable']:
-                self.send_udp_packet(response,self.routes[data['src']]['addr'])
+                self.send_udp_packet(response,self.routes[data['src']]['addr'], data['src'])
 
             return False
 
@@ -235,7 +300,7 @@ class Service:
 
                 if self.routes[data['src']]['enable']:
                     print(f"[Log]: follower {self.node_id} vote for candidate {data['src']} ")
-                    self.send_udp_packet(response, self.routes[data['src']]['addr'])
+                    self.send_udp_packet(response, self.routes[data['src']]['addr'], data['src'])
 
                 return True
             else:
@@ -244,7 +309,7 @@ class Service:
                 response = json.dumps(response)
 
                 if self.routes[data['src']]['enable']:
-                    self.send_udp_packet(response, self.routes[data['src']]['addr'])
+                    self.send_udp_packet(response, self.routes[data['src']]['addr'], data['src'])
 
                 return False
         else:
@@ -252,7 +317,7 @@ class Service:
             response = json.dumps(response)
 
             if self.routes[data['src']]['enable']:
-                self.send_udp_packet(response, self.routes[data['src']]['addr'])
+                self.send_udp_packet(response, self.routes[data['src']]['addr'], data['src'])
 
             return True
 
@@ -266,12 +331,70 @@ class Service:
         self.udp_thread = threading.Thread(target=self.listen_for_udp)
         self.udp_thread.start()
 
+    def update_dict_perm(self):
+        path = "dicts/node_" + str(self.node_id) + "_dict.json"
+        json_str = json.dumps(self.dict)
+        with open(path, 'w') as f:
+            f.write(json_str)
+
+    def reply_to_user(self, addr: tuple, payload: dict):
+        json_str = json.dumps(payload)
+        self.send_udp_packet(json_str, addr, None)
+
     def all_server_func(self,data):
         if self.commit_idx > self.last_applied_idx:
             print(f"[Log]:Apply Entry {self.commit_idx} on Server{self.node_id}")
             self.last_applied_idx = self.commit_idx
             ######## applied to local machine ############
-            pass
+            for i in range(self.last_applied_idx+1, self.commit_idx+1):
+                current_log = self.log.get_entry(i)
+                if current_log['act'] == 'create':
+                    if self.node_id in current_log['info']['clients_id']:  # the dictionary is shared on this node
+                        self.dict[current_log['info']['dict_id']] = current_log['info']
+                        self.update_dict_perm()
+
+                        payload = {
+                            "act": "create",
+                            "msg": f"[Node {self.node_id}] Successfully created dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}"
+                        }
+                        self.reply_to_user(current_log['user_addr'], payload)
+
+                elif current_log['act'] == 'put':
+                    if current_log['info']['dict_id'] in self.dict:  # if the current node contains the certain dict
+                        op_dict = self.dict[current_log['info']['dict_id']]
+                        pub_key_pem = op_dict['public_key']
+                        pub_key = rsa.PublicKey.load_pkcs1(pub_key_pem)
+                        add_key = current_log['info']['key']
+                        plain_val = current_log['info']['value']
+                        enc_val = rsa.encrypt(plain_val.encode(), pub_key)
+                        op_dict['payload'][add_key] = enc_val
+                        self.dict[current_log['info']['dict_id']] = op_dict
+                        self.update_dict_perm()
+
+                        res = {
+                            "act": "put",
+                            "msg": f"[Node {self.node_id}] Successfully modified dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}, set <{add_key}> to <{plain_val}>, encrypted as '{enc_val.decode()}'"
+                        }
+                        self.reply_to_user(current_log['user_addr'], res)
+
+                elif current_log['act'] == 'get':
+                    if current_log['info']['dict_id'] in self.dict:  # if the current node contains the certain dict
+                        op_dict = self.dict[current_log['info']['dict_id']]
+                        if self.node_id in op_dict['clients_id']:  # if the current node has the permission to read the dict
+                            enc_sec_key_pem = op_dict['secret_keys'][str(self.node_id)]
+                            secret_key_pem = rsa.decrypt(enc_sec_key_pem, self.private_key)
+                            secret_key = rsa.PrivateKey.load_pkcs1(secret_key_pem)
+
+                            read_key = current_log['info']['key']
+                            enc_val = op_dict['payload'][read_key]
+                            plain_data = rsa.decrypt(enc_val, secret_key)
+
+                            res = {
+                                "act": "get",
+                                "msg": f"[Node {self.node_id}] Successfully read dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}, the <{read_key}> === <{plain_data}>"
+                            }
+                            self.reply_to_user(current_log['user_addr'], res)
+
 
         if not data:
             return
@@ -352,33 +475,45 @@ class Service:
         if data != None and data['type'] == 'ClientRequest':
             print(f"[Log]: leader {self.node_id} receive client request")
             if data['command'] == 'create':
+                (public_key, private_key) = rsa.newkeys(256)
+                private_key_pem = private_key.save_pkcs1()
+                secret_keys = {}
+                for c_id in data['clients_id']:
+                    c_pub_key = self.pubkey_list[c_id]
+                    enc_private_key_pem = rsa.encrypt(private_key_pem, c_pub_key)
+                    secret_keys[c_id] = enc_private_key_pem
+
                 act = 'create'
                 info = {
-                    'dict_id': self.dict_id,
-                    'clients_id': data['clients_id']
-                    # need to add public key and private key here
+                    'dict_id': self.dict_id,  # dict_id
+                    'clients_id': data['clients_id'],
+                    'public_key': public_key.save_pkcs1(),
+                    'secret_keys': secret_keys,
+                    'payload': {}
                 }
+
+                self.dict_id = (self.dict_id[0], self.dict_id[1]+1)
+
             elif data['command'] == 'put':
                 act = 'put'
                 info = {
                     'dict_id': data['dict_id'],
-                    'client_id': data['client_id'],
                     'key': data['key'],
                     'value': data['value']
-                    # need to replace by encrypted version
                 }
+
             elif data['command'] == 'get':
                 act = 'get'
                 info = {
                     'dict_id': data['dict_id'],
-                    'client_id': data['client_id'],
                     'key': data['key']
-                    # need to replace by encrypted version
                 }
+
             new_entry = {
                 'term': self.current_term,
                 'act': act,
-                'info': info
+                'info': info,
+                'user_addr': data['user_addr']
             }
             self.log.log_append([new_entry])
 
@@ -404,8 +539,6 @@ class Service:
                 if count > len(self.routes)//2:
                     self.commit_idx = N
                     print(f"[Log]: leader {self.node_id} commit entry {self.commit_idx}")
-                    # run on local machine
-
                     break
             else:
                 break
@@ -418,14 +551,14 @@ class Service:
                     data = json.dumps(data)
                     if self.routes[self.leader_id]['enable']:
                         print(f"follower {self.node_id} redirect data to leader {self.leader_id}")
-                        self.send_udp_packet(data, self.routes[self.leader_id]['addr'])
+                        self.send_udp_packet(data, self.routes[self.leader_id]['addr'], self.leader_id)
                         return None
         elif data['command'] == 'printDict':
-            print("DICT")
+            print("DICT")  #TODO
             # need to response user using user_addr
             return None
         elif data['command'] == 'printAll':
-            print("Alldict")
+            print("Alldict")  #TODO
             # need to response user using user_addr
             return None
         elif data['command'] == 'failLink':
@@ -437,9 +570,12 @@ class Service:
             # need to response user using user_addr
             return None
         else:
-            print('kill precess')
-            # need to response user using user_addr
-            return None
+            print('kill precess')  #TODO
+            # need to response user using user_addr  TODO save all instance value to a file
+
+
+            self.save_ckpt()
+            exit()
 
         return data
 
@@ -451,6 +587,8 @@ class Service:
                 data, addr = None, None
 
             if data:
+                # data = rsa.decrypt(data, self.private_key)
+                data = data.decode("utf-8")
                 data = json.loads(data)
                 if data['type'] == 'ClientRequest':
                     print(f"[Log]: receive user command {data['command']}")
@@ -475,9 +613,10 @@ class Service:
 
 def run():
     user_id = int(sys.argv[1])
+    recovery = int(sys.argv[2])
     config_path = "config.yaml"
 
-    service = Service(user_id, config_path)
+    service = Service(user_id, config_path, recovery=recovery)
 
 
 if __name__ == '__main__':

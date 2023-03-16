@@ -1,5 +1,6 @@
 import argparse
 import json
+import threading
 
 import yaml
 import socket
@@ -39,6 +40,19 @@ fix_link_parser.add_argument('dest', help='destination process')
 
 # failProcess command
 subparsers.add_parser('failProcess')
+
+
+def listen_for_responses(recv_sock):
+    while True:
+        data, addr = recv_sock.recvfrom(2048)
+        response = json.loads(data.decode())
+        # print(f"Response from {addr}: {response}")
+        if response['act'] == "create":
+            print(response['msg'])
+        elif response['act'] == "put":
+            print(response['msg'])
+        elif response['act'] == "get":
+            print(response['msg'])
 
 
 def run():
@@ -115,7 +129,11 @@ def run():
                 dest_addr = (client['ip'], client['port'])
         send_sock.sendto(request.encode(), dest_addr)
 
-    # data, addr = recv_sock.recvfrom(2048)
+    listener_thread = threading.Thread(target=listen_for_responses, args=(recv_sock,))
+    listener_thread.daemon = True
+    listener_thread.start()
+
+    listener_thread.join()
 
 
 

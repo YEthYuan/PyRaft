@@ -36,6 +36,9 @@ class Log:
         else:
             return self.entries[index]['term']
 
+    def get_entry(self, index):
+        return self.entries[max(0, index)]
+
     def get_entries(self, index):
         return self.entries[max(0,index):]
 
