@@ -143,6 +143,8 @@ class Service:
         sock.sendto(data, addr)
 
     def save_ckpt(self):
+        del self.__dict__['udp_thread']
+        del self.__dict__['udp_sock']
         filename = "ckpts/node" + str(self.node_id) + "_ckpt.pkl"
         with open(filename, 'wb') as file:
             pickle.dump(self.__dict__, file)
