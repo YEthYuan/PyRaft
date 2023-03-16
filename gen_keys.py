@@ -11,7 +11,7 @@ def main():
         public_path = "secrets/node_" + str(client['nodeId']) + "_public_key.pem"
         private_path = "secrets/node_" + str(client['nodeId']) + "_private_key.pem"
 
-        (public_key, private_key) = rsa.newkeys(256)
+        (public_key, private_key) = rsa.newkeys(2048)
         with open(public_path, "wb") as public_file:
             public_file.write(public_key.save_pkcs1())
 

@@ -85,7 +85,7 @@ class Service:
                 public_key_data = file.read()
             self.pubkey_list[client['nodeId']] = rsa.PublicKey.load_pkcs1(public_key_data)
 
-    def gen_rsa_key_pair(self, length=512, path="secrets/"):
+    def gen_rsa_key_pair(self, length=2048, path="secrets/"):
         public_path = path + "node_" + str(self.node_id) + "_public_key.pem"
         private_path = path + "node_" + str(self.node_id) + "_private_key.pem"
         if os.path.exists(public_path) and os.path.exists(private_path):
@@ -475,7 +475,7 @@ class Service:
         if data != None and data['type'] == 'ClientRequest':
             print(f"[Log]: leader {self.node_id} receive client request")
             if data['command'] == 'create':
-                (public_key, private_key) = rsa.newkeys(256)
+                (public_key, private_key) = rsa.newkeys(512)
                 private_key_pem = private_key.save_pkcs1()
                 secret_keys = {}
                 for c_id in data['clients_id']:
