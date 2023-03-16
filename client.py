@@ -10,7 +10,7 @@ subparsers = parser.add_subparsers(dest='command')
 
 # create command
 create_parser = subparsers.add_parser('create')
-create_parser.add_argument('client_ids', nargs='+', help='list of client ids')
+create_parser.add_argument('client_ids', type=int, nargs='+', help='list of client ids')
 
 # put command
 put_parser = subparsers.add_parser('put')
@@ -32,11 +32,11 @@ subparsers.add_parser('printAll')
 
 # failLink command
 fail_link_parser = subparsers.add_parser('failLink')
-fail_link_parser.add_argument('dest', help='destination process')
+fail_link_parser.add_argument('dest', type=int, help='destination process')
 
 # fixLink command
 fix_link_parser = subparsers.add_parser('fixLink')
-fix_link_parser.add_argument('dest', help='destination process')
+fix_link_parser.add_argument('dest', type=int, help='destination process')
 
 # failProcess command
 subparsers.add_parser('failProcess')
