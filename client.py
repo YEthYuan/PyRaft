@@ -130,8 +130,10 @@ def run():
     send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     send_sock.sendto(request.encode(), src_addr)
 
+    request = json.loads(request)
     if args.command == 'failLink' or args.command == 'fixLink':
         request['dest'] = user_id
+        request = json.dumps(request)
         for client in config['clients']:
             if args.dest == client['nodeId']:
                 dest_addr = (client['ip'], client['port'])
