@@ -14,18 +14,18 @@ create_parser.add_argument('client_ids', nargs='+', help='list of client ids')
 
 # put command
 put_parser = subparsers.add_parser('put')
-put_parser.add_argument('dict_id', help='dictionary id')
+put_parser.add_argument('dict_id', type=str, help='dictionary id')
 put_parser.add_argument('key', help='key')
 put_parser.add_argument('value', help='value')
 
 # get command
 get_parser = subparsers.add_parser('get')
-get_parser.add_argument('dict_id', help='dictionary id')
+get_parser.add_argument('dict_id', type=str, help='dictionary id')
 get_parser.add_argument('key', help='key')
 
 # printDict command
 print_dict_parser = subparsers.add_parser('printDict')
-print_dict_parser.add_argument('dict_id', help='dictionary id')
+print_dict_parser.add_argument('dict_id', type=str, help='dictionary id')
 
 # printAll command
 subparsers.add_parser('printAll')
@@ -53,6 +53,14 @@ def listen_for_responses(recv_sock):
             print(response['msg'])
         elif response['act'] == "get":
             print(response['msg'])
+        else:
+            print(response['msg'])
+
+
+def str2tuple(input_string: str) -> tuple:
+    input_list = input_string.split(",")
+    input_tuple = tuple(input_list)
+    return input_tuple
 
 
 def run():
@@ -83,7 +91,7 @@ def run():
             'type': 'ClientRequest',
             'user_addr': user_addr,
             'command': args.command,
-            'dict_id': args.dict_id,
+            'dict_id': str2tuple(args.dict_id),
             'client_id': user_id,
             'key': args.key,
             'value': args.value
@@ -93,7 +101,7 @@ def run():
             'type': 'ClientRequest',
             'user_addr': user_addr,
             'command': args.command,
-            'dict_id': args.dict_id,
+            'dict_id': str2tuple(args.dict_id),
             'client_id': user_id,
             'key': args.key
         }
@@ -102,7 +110,7 @@ def run():
             'type': 'ClientRequest',
             'user_addr': user_addr,
             'command': args.command,
-            'dict_id': args.dict_id,
+            'dict_id': str2tuple(args.dict_id)
         }
     elif args.command == 'fixLink' or args.command == 'failLink':
         request = {

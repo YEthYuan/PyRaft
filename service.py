@@ -553,26 +553,45 @@ class Service:
                         print(f"follower {self.node_id} redirect data to leader {self.leader_id}")
                         self.send_udp_packet(data, self.routes[self.leader_id]['addr'], self.leader_id)
                         return None
+
         elif data['command'] == 'printDict':
-            print("DICT")  #TODO
-            # need to response user using user_addr
+            if data['dict_id'] not in self.dict:
+                res = {
+                    "act": "printDict",
+                    "msg": f"[Node {self.node_id}] Dict <{data['dict_id'][0]},{data['dict_id'][1]}> not found in current node! "
+                }
+                self.reply_to_user(data['user_addr'], res)
+                return None
+
+            find_dict = self.dict[data['dict_id']]
+            res = {
+                "act": "printDict",
+                "msg": f"[Node {self.node_id}] Dict <{data['dict_id'][0]},{data['dict_id'][1]}> is owned by {','.join(find_dict['clients_id'])}"
+            }
+            self.reply_to_user(data['user_addr'], res)
+
             return None
+
         elif data['command'] == 'printAll':
-            print("Alldict")  #TODO
-            # need to response user using user_addr
+            res = {
+                "act": "printAll",
+                "msg": f"[Node {self.node_id}] Dict storage {','.join(self.dict.keys())}"
+            }
+            self.reply_to_user(data['user_addr'], res)
+
             return None
+
         elif data['command'] == 'failLink':
             self.routes[data['dest']]['enable'] = False
-            # need to response user using user_addr
+            # need to response user using user_addr TODO
             return None
         elif data['command'] == 'fixLink':
             self.routes[data['dest']]['enable'] = True
-            # need to response user using user_addr
+            # need to response user using user_addr TODO
             return None
         else:
-            print('kill precess')  #TODO
-            # need to response user using user_addr  TODO save all instance value to a file
-
+            print('kill precess')
+            # need to response user using user_addr TODO
 
             self.save_ckpt()
             exit()
