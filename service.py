@@ -357,7 +357,7 @@ class Service:
                 current_log = self.log.get_entry(i)
                 if current_log['act'] == 'create':
                     if self.node_id in current_log['info']['clients_id']:  # the dictionary is shared on this node
-                        self.dict[current_log['info']['dict_id']] = current_log['info']
+                        self.dict[str(current_log['info']['dict_id'])] = current_log['info']
                         self.update_dict_perm()
 
                         payload = {
@@ -367,8 +367,8 @@ class Service:
                         self.reply_to_user(current_log['user_addr'], payload)
 
                 elif current_log['act'] == 'put':
-                    if current_log['info']['dict_id'] in self.dict:  # if the current node contains the certain dict
-                        op_dict = self.dict[current_log['info']['dict_id']]
+                    if str(current_log['info']['dict_id']) in self.dict:  # if the current node contains the certain dict
+                        op_dict = self.dict[str(current_log['info']['dict_id'])]
                         if self.node_id in op_dict['clients_id']:
                             enc_aes_key = op_dict['secret_keys'][self.node_id]
                             enc_aes_key = base64.b64decode(enc_aes_key)
@@ -380,7 +380,7 @@ class Service:
                             enc_val = self.encrypt_message(plain_val, aes_key)
 
                             op_dict['payload'][add_key] = enc_val.decode()
-                            self.dict[current_log['info']['dict_id']] = op_dict
+                            self.dict[str(current_log['info']['dict_id'])] = op_dict
                             self.update_dict_perm()
 
                             res = {
@@ -390,8 +390,8 @@ class Service:
                             self.reply_to_user(current_log['user_addr'], res)
 
                 elif current_log['act'] == 'get':
-                    if current_log['info']['dict_id'] in self.dict:  # if the current node contains the certain dict
-                        op_dict = self.dict[current_log['info']['dict_id']]
+                    if str(current_log['info']['dict_id']) in self.dict:  # if the current node contains the certain dict
+                        op_dict = self.dict[str(current_log['info']['dict_id'])]
                         if self.node_id in op_dict['clients_id']:  # if the current node has the permission to read the dict
                             enc_aes_key = op_dict['secret_keys'][self.node_id]
                             enc_aes_key = base64.b64decode(enc_aes_key)
@@ -586,7 +586,7 @@ class Service:
                         return None
 
         elif data['command'] == 'printDict':
-            if data['dict_id'] not in self.dict:
+            if str(data['dict_id']) not in self.dict:
                 res = {
                     "act": "printDict",
                     "msg": f"[Node {self.node_id}] Dict <{data['dict_id'][0]},{data['dict_id'][1]}> not found in current node! "
@@ -594,7 +594,7 @@ class Service:
                 self.reply_to_user(data['user_addr'], res)
                 return None
 
-            find_dict = self.dict[data['dict_id']]
+            find_dict = self.dict[str(data['dict_id'])]
             res = {
                 "act": "printDict",
                 "msg": f"[Node {self.node_id}] Dict <{data['dict_id'][0]},{data['dict_id'][1]}> is owned by {','.join(find_dict['clients_id'])}"
