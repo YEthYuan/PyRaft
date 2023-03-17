@@ -3,14 +3,8 @@ import json
 
 
 class Log:
-    def __init__(self, filename):
-        self.filename = filename
-
-        if os.path.exists(self.filename):
-            with open(self.filename, "r") as f:
-                self.entries = json.load(f)
-        else:
-            self.entries = []
+    def __init__(self):
+        self.entries = []
 
 
     @property

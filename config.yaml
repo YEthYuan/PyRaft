@@ -1,17 +1,22 @@
 clients:
-  - nodeId: 1
+  - nodeId: 'A'
+    pid: 1
     ip: 127.0.0.1
     port: 8001
-  - nodeId: 2
+  - nodeId: 'B'
+    pid: 2
     ip: 127.0.0.1
     port: 8002
-  - nodeId: 3
+  - nodeId: 'C'
+    pid: 3
     ip: 127.0.0.1
     port: 8003
-  - nodeId: 4
+  - nodeId: 'D'
+    pid: 4
     ip: 127.0.0.1
     port: 8004
-  - nodeId: 5
+  - nodeId: 'E'
+    pid: 5
     ip: 127.0.0.1
     port: 8005
 

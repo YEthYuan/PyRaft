@@ -10,7 +10,7 @@ subparsers = parser.add_subparsers(dest='command')
 
 # create command
 create_parser = subparsers.add_parser('create')
-create_parser.add_argument('client_ids', type=int, nargs='+', help='list of client ids')
+create_parser.add_argument('client_ids',  nargs='+', help='list of client ids')
 
 # put command
 put_parser = subparsers.add_parser('put')
@@ -32,30 +32,14 @@ subparsers.add_parser('printAll')
 
 # failLink command
 fail_link_parser = subparsers.add_parser('failLink')
-fail_link_parser.add_argument('dest', type=int, help='destination process')
+fail_link_parser.add_argument('dest', help='destination process')
 
 # fixLink command
 fix_link_parser = subparsers.add_parser('fixLink')
-fix_link_parser.add_argument('dest', type=int, help='destination process')
+fix_link_parser.add_argument('dest', help='destination process')
 
 # failProcess command
 subparsers.add_parser('failProcess')
-
-
-def listen_for_responses(recv_sock):
-    while True:
-        data, addr = recv_sock.recvfrom(2048)
-        response = json.loads(data.decode())
-        # print(f"Response from {addr}: {response}")
-        if response['act'] == "create":
-            print(response['msg'])
-        elif response['act'] == "put":
-            print(response['msg'])
-        elif response['act'] == "get":
-            print(response['msg'])
-        else:
-            print(response['msg'])
-
 
 def str2tuple(input_string: str) -> tuple:
     input_list = input_string.split(",")
@@ -71,12 +55,10 @@ def run():
         config = yaml.load(file, Loader=yaml.FullLoader)
 
     for client in config['clients']:
-        if user_id == str(client['nodeId']):
+        if user_id == client['nodeId']:
             src_addr = (client['ip'], client['port'])
 
     user_addr = ('127.0.0.1', 8010)
-    recv_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    recv_sock.bind(user_addr)
 
     args = parser.parse_args()
 
@@ -140,14 +122,6 @@ def run():
             if args.dest == client['nodeId']:
                 dest_addr = (client['ip'], client['port'])
         send_sock.sendto(request.encode(), dest_addr)
-
-    listener_thread = threading.Thread(target=listen_for_responses, args=(recv_sock,))
-    listener_thread.daemon = True
-    listener_thread.start()
-
-    listener_thread.join()
-
-
 
 
 if __name__ == "__main__":

@@ -17,36 +17,36 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 
 class Service:
-    def __init__(self, id: int, config_path: str, recovery=0, sleep=1):
+    def __init__(self, id, config_path: str, recovery=0, sleep=1):
         self.node_id = id
+        self.pid = 0
         self.udp_thread = None
         self.udp_sock = None
         self.sleep = sleep
-
-        self.current_term = 0
-        self.voted_for = None
-        self.filename = "logs/" + str(self.node_id) + "_log.json"
-        self.log = Log(self.filename)
-        self.dict_id = (self.node_id, 0)
-        self.dict = {}
-        self.commit_idx = -1
-        self.last_applied_idx = -1
         self.routes = {}
         self.my_addr = None
-        self.state = 'follower'
-        self.votes = {}
-        self.leader_id = None
-
         # generate key pair
         self.public_key = None
         self.private_key = None
         self.pubkey_list = None
+        self.config_internet(config_path)
+
+        self.current_term = 0
+        self.voted_for = None
+        # self.filename = "logs/" + self.node_id + "_log.json"
+        self.log = Log()
+        self.dict_id = (self.pid, 0)
+        self.dict = {}
+        self.commit_idx = -1
+        self.last_applied_idx = -1
+
+        self.state = 'follower'
+        self.votes = {}
+        self.leader_id = None
 
         # volatile state on leaders
         self.next_idx = {_id: self.log.last_log_index+1 for _id in self.routes}
         self.match_idx = {_id: -1 for _id in self.routes}
-
-        self.config_internet(config_path)
 
         # udp socket setting
         self.init_udp_recv_settings()
@@ -55,7 +55,7 @@ class Service:
 
         # time clock
         # self.election_timeout = time.time() + random.randint(*self.T)
-        self.election_timeout = time.time() + (7 + self.node_id * 3)
+        self.election_timeout = time.time() + (7 + self.pid * 3)
         self.heartbeat = 0
 
         if recovery:
@@ -70,8 +70,9 @@ class Service:
         for client in config['clients']:
             if self.node_id == client['nodeId']:
                 self.my_addr = (client['ip'], client['port'])
-                public_path = "secrets/node_" + str(self.node_id) + "_public_key.pem"
-                private_path = "secrets/node_" + str(self.node_id) + "_private_key.pem"
+                self.pid = client['pid']
+                public_path = "secrets/node_" + self.node_id + "_public_key.pem"
+                private_path = "secrets/node_" + self.node_id + "_private_key.pem"
                 with open(public_path, mode='rb') as file:
                     public_key_data = file.read()
                 self.public_key = rsa.PublicKey.load_pkcs1(public_key_data)
@@ -245,7 +246,7 @@ class Service:
 
     def start_election(self):
         # self.election_timeout = time.time() + random.randint(*self.T)
-        self.election_timeout = time.time() + (7 + self.node_id * 3)
+        self.election_timeout = time.time() + (7 + self.pid * 3)
         self.state = 'candidate'
         self.current_term += 1
         self.voted_for = self.node_id
@@ -352,7 +353,7 @@ class Service:
         print(f"dict:{self.dict}")
         print(self.log.entries)
         if self.commit_idx > self.last_applied_idx:
-            print(f"[Log]:Apply Entry {self.commit_idx} on Server{self.node_id}")
+            # print(f"[Log]:Apply Entry {self.commit_idx} on Server{self.node_id}")
             ######## applied to local machine ############
             for i in range(self.last_applied_idx+1, self.commit_idx+1):
                 current_log = self.log.get_entry(i)
@@ -440,7 +441,7 @@ class Service:
         # print(timeout)
         if timeout:
             # self.election_timeout = time.time() + random.randint(*self.T)
-            self.election_timeout = time.time() + (7 + self.node_id * 3)
+            self.election_timeout = time.time() + (7 + self.pid * 3)
 
         # func 2: start election if timeout
         if time.time() > self.election_timeout:
@@ -471,7 +472,7 @@ class Service:
                 print(f"[Log]: candidate {self.node_id} receive append entry rpc from leader {data['src']}")
                 print(f"[Log]: candidate {self.node_id} become a follower")
                 # self.election_timeout = time.time() + random.randint(*self.T)
-                self.election_timeout = time.time() + (7 + self.node_id * 3)
+                self.election_timeout = time.time() + (7 + self.pid * 3)
                 self.state = 'follower'
                 self.voted_for = None
                 return
@@ -598,7 +599,7 @@ class Service:
             find_dict = self.dict[str(data['dict_id'])]
             res = {
                 "act": "printDict",
-                "msg": f"[Node {self.node_id}] Dict {data['dict_id']} is owned by {','.join(find_dict['clients_id'])}"
+                "msg": f"[Node {self.node_id}] Dict {data['dict_id']} is {find_dict}"
             }
             self.reply_to_user(data['user_addr'], res)
 
@@ -607,7 +608,7 @@ class Service:
         elif data['command'] == 'printAll':
             res = {
                 "act": "printAll",
-                "msg": f"[Node {self.node_id}] Dict storage {','.join(self.dict.keys())}"
+                "msg": f"[Node {self.node_id}] Dict storage {self.dict}"
             }
             self.reply_to_user(data['user_addr'], res)
 
@@ -663,7 +664,7 @@ class Service:
 
 
 def run():
-    user_id = int(sys.argv[1])
+    user_id = sys.argv[1]
     recovery = int(sys.argv[2])
     config_path = "config.yaml"
 
