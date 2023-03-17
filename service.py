@@ -363,7 +363,7 @@ class Service:
 
                         payload = {
                             "act": "create",
-                            "msg": f"[Node {self.node_id}] Successfully created dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}"
+                            "msg": f"[Node {self.node_id}] Successfully created dict {current_log['info']['dict_id']} on node {self.node_id}"
                         }
                         self.reply_to_user(current_log['user_addr'], payload)
 
@@ -380,13 +380,13 @@ class Service:
 
                             enc_val = self.encrypt_message(plain_val, aes_key)
 
-                            op_dict['payload'][add_key] = enc_val.decode()
+                            op_dict['payload'][add_key] = base64.b64encode(enc_val).decode()
                             self.dict[str(current_log['info']['dict_id'])] = op_dict
                             self.update_dict_perm()
 
                             res = {
                                 "act": "put",
-                                "msg": f"[Node {self.node_id}] Successfully modified dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}, set <{add_key}> to <{plain_val}>, encrypted as '{enc_val.decode()}'"
+                                "msg": f"[Node {self.node_id}] Successfully modified dict {current_log['info']['dict_id']} on node {self.node_id}, set <{add_key}> to <{plain_val}>, encrypted as '{base64.b64encode(enc_val).decode()}'"
                             }
                             self.reply_to_user(current_log['user_addr'], res)
 
@@ -399,13 +399,13 @@ class Service:
                             aes_key = rsa.decrypt(enc_aes_key, self.private_key)
 
                             read_key = current_log['info']['key']
-                            enc_val = op_dict['payload'][read_key].encode()
+                            enc_val = base64.b64decode(op_dict['payload'][read_key])
 
                             plain_data = self.decrypt_message(enc_val, aes_key)
 
                             res = {
                                 "act": "get",
-                                "msg": f"[Node {self.node_id}] Successfully read dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}, the <{read_key}> === <{plain_data}>"
+                                "msg": f"[Node {self.node_id}] Successfully read dict {current_log['info']['dict_id']} on node {self.node_id}, the <{read_key}> === <{plain_data}>"
                             }
                             self.reply_to_user(current_log['user_addr'], res)
             self.last_applied_idx = self.commit_idx
@@ -500,7 +500,7 @@ class Service:
 
                 act = 'create'
                 info = {
-                    'dict_id': self.dict_id,  # dict_id
+                    'dict_id': str(self.dict_id),  # dict_id
                     'clients_id': data['clients_id'],
                     'secret_keys': secret_keys,
                     'payload': {}
@@ -590,7 +590,7 @@ class Service:
             if str(data['dict_id']) not in self.dict:
                 res = {
                     "act": "printDict",
-                    "msg": f"[Node {self.node_id}] Dict <{data['dict_id'][0]},{data['dict_id'][1]}> not found in current node! "
+                    "msg": f"[Node {self.node_id}] Dict {data['dict_id']} not found in current node! "
                 }
                 self.reply_to_user(data['user_addr'], res)
                 return None
@@ -598,7 +598,7 @@ class Service:
             find_dict = self.dict[str(data['dict_id'])]
             res = {
                 "act": "printDict",
-                "msg": f"[Node {self.node_id}] Dict <{data['dict_id'][0]},{data['dict_id'][1]}> is owned by {','.join(find_dict['clients_id'])}"
+                "msg": f"[Node {self.node_id}] Dict {data['dict_id']} is owned by {','.join(find_dict['clients_id'])}"
             }
             self.reply_to_user(data['user_addr'], res)
 

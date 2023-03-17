@@ -59,18 +59,19 @@ def listen_for_responses(recv_sock):
 
 def str2tuple(input_string: str) -> tuple:
     input_list = input_string.split(",")
+    input_list = [int(a) for a in input_list]
     input_tuple = tuple(input_list)
     return input_tuple
 
 
 def run():
-    user_id = int(input("Please input user_id:"))
+    user_id = input("Please input user_id:")
     config_path = "config.yaml"
     with open(config_path, 'r') as file:
         config = yaml.load(file, Loader=yaml.FullLoader)
 
     for client in config['clients']:
-        if user_id == client['nodeId']:
+        if user_id == str(client['nodeId']):
             src_addr = (client['ip'], client['port'])
 
     user_addr = ('127.0.0.1', 8010)
@@ -91,7 +92,7 @@ def run():
             'type': 'ClientRequest',
             'user_addr': user_addr,
             'command': args.command,
-            'dict_id': str2tuple(args.dict_id),
+            'dict_id': str(str2tuple(args.dict_id)),
             'client_id': user_id,
             'key': args.key,
             'value': args.value
@@ -101,7 +102,7 @@ def run():
             'type': 'ClientRequest',
             'user_addr': user_addr,
             'command': args.command,
-            'dict_id': str2tuple(args.dict_id),
+            'dict_id': str(str2tuple(args.dict_id)),
             'client_id': user_id,
             'key': args.key
         }
@@ -110,7 +111,7 @@ def run():
             'type': 'ClientRequest',
             'user_addr': user_addr,
             'command': args.command,
-            'dict_id': str2tuple(args.dict_id)
+            'dict_id': str(str2tuple(args.dict_id))
         }
     elif args.command == 'fixLink' or args.command == 'failLink':
         request = {
