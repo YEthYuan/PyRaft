@@ -527,7 +527,7 @@ class Service:
                 'term': self.current_term,
                 'act': act,
                 'info': info,
-                'user_addr': tuple(data['user_addr'])
+                'user_addr': data['user_addr']
             }
             self.log.log_append([new_entry])
 
