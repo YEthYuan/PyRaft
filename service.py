@@ -126,7 +126,7 @@ class Service:
     #         'from': self.node_id
     #     }
     #     return packet
-    def send_udp_packet(self, data: str, addr: tuple, dst):
+    def send_udp_packet(self, data: str, addr, dst):
         """
         Sends a UDP packet to a specified host and port
 
@@ -144,7 +144,7 @@ class Service:
         # data_enc = rsa.encrypt(data, self.pubkey_list[dst])
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.sendto(data, addr)
+        sock.sendto(data, tuple(addr))
 
     def save_ckpt(self):
         del self.__dict__['udp_thread']
@@ -350,6 +350,7 @@ class Service:
         print(f"commit_idx:{self.commit_idx}")
         print(f"last_applied_idx:{self.last_applied_idx}")
         print(f"dict:{self.dict}")
+        print(self.log.entries)
         if self.commit_idx > self.last_applied_idx:
             print(f"[Log]:Apply Entry {self.commit_idx} on Server{self.node_id}")
             ######## applied to local machine ############
@@ -526,7 +527,7 @@ class Service:
                 'term': self.current_term,
                 'act': act,
                 'info': info,
-                'user_addr': data['user_addr']
+                'user_addr': tuple(data['user_addr'])
             }
             self.log.log_append([new_entry])
 
