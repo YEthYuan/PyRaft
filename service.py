@@ -1,3 +1,4 @@
+import base64
 import os
 import pickle
 import sys
@@ -11,6 +12,9 @@ import socket
 import threading
 
 from log import Log
+
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
 
 class Service:
     def __init__(self, id: int, config_path: str, recovery=0, sleep=1):
@@ -364,32 +368,38 @@ class Service:
                 elif current_log['act'] == 'put':
                     if current_log['info']['dict_id'] in self.dict:  # if the current node contains the certain dict
                         op_dict = self.dict[current_log['info']['dict_id']]
-                        pub_key_pem = op_dict['public_key']
-                        pub_key = rsa.PublicKey.load_pkcs1(pub_key_pem)
-                        add_key = current_log['info']['key']
-                        plain_val = current_log['info']['value']
-                        enc_val = rsa.encrypt(plain_val.encode(), pub_key)
-                        op_dict['payload'][add_key] = enc_val
-                        self.dict[current_log['info']['dict_id']] = op_dict
-                        self.update_dict_perm()
+                        if self.node_id in op_dict['clients_id']:
+                            enc_aes_key = op_dict['secret_keys'][self.node_id]
+                            enc_aes_key = base64.b64decode(enc_aes_key)
+                            aes_key = rsa.decrypt(enc_aes_key, self.private_key)
 
-                        res = {
-                            "act": "put",
-                            "msg": f"[Node {self.node_id}] Successfully modified dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}, set <{add_key}> to <{plain_val}>, encrypted as '{enc_val.decode()}'"
-                        }
-                        self.reply_to_user(current_log['user_addr'], res)
+                            add_key = current_log['info']['key']
+                            plain_val = current_log['info']['value']
+
+                            enc_val = self.encrypt_message(plain_val, aes_key)
+
+                            op_dict['payload'][add_key] = enc_val.decode()
+                            self.dict[current_log['info']['dict_id']] = op_dict
+                            self.update_dict_perm()
+
+                            res = {
+                                "act": "put",
+                                "msg": f"[Node {self.node_id}] Successfully modified dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}, set <{add_key}> to <{plain_val}>, encrypted as '{enc_val.decode()}'"
+                            }
+                            self.reply_to_user(current_log['user_addr'], res)
 
                 elif current_log['act'] == 'get':
                     if current_log['info']['dict_id'] in self.dict:  # if the current node contains the certain dict
                         op_dict = self.dict[current_log['info']['dict_id']]
                         if self.node_id in op_dict['clients_id']:  # if the current node has the permission to read the dict
-                            enc_sec_key_pem = op_dict['secret_keys'][str(self.node_id)]
-                            secret_key_pem = rsa.decrypt(enc_sec_key_pem, self.private_key)
-                            secret_key = rsa.PrivateKey.load_pkcs1(secret_key_pem)
+                            enc_aes_key = op_dict['secret_keys'][self.node_id]
+                            enc_aes_key = base64.b64decode(enc_aes_key)
+                            aes_key = rsa.decrypt(enc_aes_key, self.private_key)
 
                             read_key = current_log['info']['key']
-                            enc_val = op_dict['payload'][read_key]
-                            plain_data = rsa.decrypt(enc_val, secret_key)
+                            enc_val = op_dict['payload'][read_key].encode()
+
+                            plain_data = self.decrypt_message(enc_val, aes_key)
 
                             res = {
                                 "act": "get",
@@ -477,19 +487,18 @@ class Service:
         if data != None and data['type'] == 'ClientRequest':
             print(f"[Log]: leader {self.node_id} receive client request")
             if data['command'] == 'create':
-                (public_key, private_key) = rsa.newkeys(512)
-                private_key_pem = private_key.save_pkcs1()
+                aes_key = self.generate_key()
                 secret_keys = {}
                 for c_id in data['clients_id']:
                     c_pub_key = self.pubkey_list[c_id]
-                    enc_private_key_pem = rsa.encrypt(private_key_pem, c_pub_key)
-                    secret_keys[c_id] = enc_private_key_pem
+                    enc_aes_key = rsa.encrypt(aes_key, c_pub_key)
+                    enc_aes_key = base64.b64encode(enc_aes_key).decode()
+                    secret_keys[c_id] = enc_aes_key
 
                 act = 'create'
                 info = {
                     'dict_id': self.dict_id,  # dict_id
                     'clients_id': data['clients_id'],
-                    'public_key': public_key.save_pkcs1(),
                     'secret_keys': secret_keys,
                     'payload': {}
                 }
@@ -545,6 +554,23 @@ class Service:
             else:
                 break
 
+    def generate_key(self):
+        return os.urandom(16)
+
+    def encrypt_message(self, message, key):
+        cipher = AES.new(key, AES.MODE_CBC)
+        iv = cipher.iv
+        ciphertext = cipher.encrypt(pad(message.encode(), AES.block_size))
+        return iv + ciphertext
+
+    def decrypt_message(self, ciphertext, key):
+        iv = ciphertext[:AES.block_size]
+        ciphertext = ciphertext[AES.block_size:]
+        cipher = AES.new(key, AES.MODE_CBC, iv=iv)
+        plaintext = unpad(cipher.decrypt(ciphertext), AES.block_size)
+        return plaintext.decode()
+
+    
     def deal_clients(self, data):
         if data['command'] == 'create' or data['command'] == 'put' or data['command'] == 'get':
             data['term'] = self.current_term
