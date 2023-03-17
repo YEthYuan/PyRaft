@@ -134,6 +134,7 @@ def run():
     if args.command == 'failLink' or args.command == 'fixLink':
         request['dest'] = user_id
         request = json.dumps(request)
+
         for client in config['clients']:
             if args.dest == client['nodeId']:
                 dest_addr = (client['ip'], client['port'])

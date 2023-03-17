@@ -27,10 +27,10 @@ class Service:
         self.voted_for = None
         self.filename = "logs/" + str(self.node_id) + "_log.json"
         self.log = Log(self.filename)
-        self.dict_id = (self.node_id,0)
+        self.dict_id = (self.node_id, 0)
         self.dict = {}
-        self.commit_idx = 0
-        self.last_applied_idx = 0
+        self.commit_idx = -1
+        self.last_applied_idx = -1
         self.routes = {}
         self.my_addr = None
         self.state = 'follower'
@@ -175,8 +175,7 @@ class Service:
     def append_entries(self):
         self.message_delay()
 
-        print(self.next_idx)
-        print(self.match_idx)
+        print(f"next_idx:{self.next_idx}")
 
         for dst in self.routes:
             if dst != self.node_id:
@@ -348,9 +347,11 @@ class Service:
         self.send_udp_packet(json_str, addr, None)
 
     def all_server_func(self,data):
+        print(f"commit_idx:{self.commit_idx}")
+        print(f"last_applied_idx:{self.last_applied_idx}")
+        print(f"dict:{self.dict}")
         if self.commit_idx > self.last_applied_idx:
             print(f"[Log]:Apply Entry {self.commit_idx} on Server{self.node_id}")
-            self.last_applied_idx = self.commit_idx
             ######## applied to local machine ############
             for i in range(self.last_applied_idx+1, self.commit_idx+1):
                 current_log = self.log.get_entry(i)
@@ -406,6 +407,7 @@ class Service:
                                 "msg": f"[Node {self.node_id}] Successfully read dict <{current_log['info']['dict_id'][0]},{current_log['info']['dict_id'][1]}> on node {self.node_id}, the <{read_key}> === <{plain_data}>"
                             }
                             self.reply_to_user(current_log['user_addr'], res)
+            self.last_applied_idx = self.commit_idx
 
 
         if not data:
@@ -462,7 +464,7 @@ class Service:
                     self.voted_for = None
                     self.heartbeat = 0
                     self.next_idx = {_id: self.log.last_log_index + 1 for _id in self.routes}
-                    self.match_idx = {_id: 0 for _id in self.routes}
+                    self.match_idx = {_id: -1 for _id in self.routes}
                     return
             elif data['type'] == 'AppendEntries':
                 print(f"[Log]: candidate {self.node_id} receive append entry rpc from leader {data['src']}")
@@ -537,13 +539,14 @@ class Service:
             else:
                 print(f"[Log]: leader {self.node_id} receive success response from follower {data['src']}")
                 self.match_idx[data['src']] = self.next_idx[data['src']]
-                print(self.log.last_log_index)
-                print(self.log.entries)
+                # print(self.log.last_log_index)
+                # print(self.log.entries)
                 self.next_idx[data['src']] = self.log.last_log_index + 1
 
         while True:
             N = self.commit_idx + 1
-            count = 0
+            count = 1
+            print(f"match_idx:{self.match_idx}")
             for peer in self.match_idx:
                 if self.match_idx[peer] >= N:
                     count += 1
