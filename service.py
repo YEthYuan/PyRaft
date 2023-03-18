@@ -545,19 +545,17 @@ class Service:
                 # print(self.log.entries)
                 self.next_idx[data['src']] = self.log.last_log_index + 1
 
-        while True:
-            N = self.commit_idx + 1
-            count = 1
-            print(f"match_idx:{self.match_idx}")
-            for peer in self.match_idx:
-                if self.match_idx[peer] >= N:
-                    count += 1
-                if count > len(self.routes)//2:
-                    self.commit_idx = N
-                    print(f"[Log]: leader {self.node_id} commit entry {self.commit_idx}")
-                    break
-            else:
-                break
+        N = self.commit_idx + 1
+        count = 1
+        print(f"match_idx:{self.match_idx}")
+        for peer in self.match_idx:
+            if self.match_idx[peer] >= N:
+                count += 1
+            if count > len(self.routes)//2:
+                self.commit_idx = N
+                print(f"[Log]: leader {self.node_id} commit entry {self.commit_idx}")
+                return
+
 
     def generate_key(self):
         return os.urandom(16)

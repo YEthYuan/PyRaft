@@ -49,7 +49,7 @@ def str2tuple(input_string: str) -> tuple:
 
 
 def run():
-    user_id = input("Please input user_id:")
+    user_id = input("Please target server_id:")
     config_path = "config.yaml"
     with open(config_path, 'r') as file:
         config = yaml.load(file, Loader=yaml.FullLoader)
